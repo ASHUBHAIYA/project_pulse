@@ -24,6 +24,12 @@ import {
   pushDataToGitHub,
   GitHubSyncConfig,
 } from './utils/apiStorage';
+import {
+  loadCloudflareD1Config,
+  saveCloudflareD1Config,
+  CloudflareD1Config,
+  fetchD1LiveStatus,
+} from './utils/cloudflareD1';
 import { isSessionAuthenticated, setSessionAuthenticated } from './utils/auth';
 import { sound } from './utils/audio';
 import { LoginView } from './components/LoginView';
@@ -38,6 +44,7 @@ import { CheckInModal } from './components/CheckInModal';
 import { NewProjectModal } from './components/NewProjectModal';
 import { ConfirmModal } from './components/ConfirmModal';
 import { GitHubSyncModal } from './components/GitHubSyncModal';
+import { CloudflareD1Modal } from './components/CloudflareD1Modal';
 import { Plus, Layers, CheckCircle2 } from 'lucide-react';
 
 export default function App() {
@@ -61,8 +68,10 @@ export default function App() {
     return 'grid';
   });
 
-  // Cross-device & GitHub Sync Config
+  // Cross-device & Cloudflare D1 Config
   const [githubConfig, setGithubConfig] = useState<GitHubSyncConfig>(() => loadGitHubConfig());
+  const [d1Config, setD1Config] = useState<CloudflareD1Config>(() => loadCloudflareD1Config());
+  const [isD1Live, setIsD1Live] = useState(false);
   const [serverLastSaved, setServerLastSaved] = useState<string | null>(null);
   const [isServerLoaded, setIsServerLoaded] = useState(false);
 
@@ -71,13 +80,14 @@ export default function App() {
   const [isDistractionDrawerOpen, setIsDistractionDrawerOpen] = useState(false);
   const [isCheckInModalOpen, setIsCheckInModalOpen] = useState(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
+  const [isD1ModalOpen, setIsD1ModalOpen] = useState(false);
   const [projectPendingDelete, setProjectPendingDelete] = useState<Project | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Hidden file input for JSON import
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // On mount and on authentication: load data directly from data/app_data.json on website server
+  // On mount and on authentication: load data directly from data/app_data.json or Cloudflare D1 (env.DB)
   useEffect(() => {
     let mounted = true;
     fetchWebsiteData()
@@ -88,14 +98,21 @@ export default function App() {
           if (Array.isArray(res.distractions)) {
             setDistractions(res.distractions);
           }
+          if (res.focusSession) {
+            setFocusSession(res.focusSession);
+            saveFocusSession(res.focusSession);
+          }
           saveProjects(res.projects);
           if (res.distractions) saveDistractions(res.distractions);
           setServerLastSaved(res.updatedAt || new Date().toISOString());
         } else {
-          // Initialize server file if not present yet
-          saveWebsiteData(projects, distractions).then(() => {
+          // Initialize server/D1 if not present yet
+          saveWebsiteData(projects, distractions, focusSession).then(() => {
             if (mounted) setServerLastSaved(new Date().toISOString());
           });
+        }
+        if (res?.provider === 'cloudflare_d1_binding' || res?.isLiveBinding) {
+          setIsD1Live(true);
         }
         setIsServerLoaded(true);
       })
@@ -103,6 +120,13 @@ export default function App() {
         console.warn('Could not read website server data file:', err);
         if (mounted) setIsServerLoaded(true);
       });
+
+    // Check D1 live binding status
+    fetchD1LiveStatus().then((st) => {
+      if (mounted && st.isLiveBinding && st.connected) {
+        setIsD1Live(true);
+      }
+    });
 
     return () => {
       mounted = false;
@@ -123,18 +147,18 @@ export default function App() {
     return () => clearTimeout(t);
   }, [toastMessage]);
 
-  // Save changes to localStorage and website backend file (debounced, only after server file has been loaded)
+  // Save changes to localStorage and website backend / Cloudflare D1 (debounced, only after server file has been loaded)
   useEffect(() => {
     if (isAuthenticated && isServerLoaded) {
       saveProjects(projects);
       const timer = setTimeout(() => {
-        saveWebsiteData(projects, distractions).then((ok) => {
+        saveWebsiteData(projects, distractions, focusSession).then((ok) => {
           if (ok) setServerLastSaved(new Date().toISOString());
         });
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [projects, isAuthenticated, distractions, isServerLoaded]);
+  }, [projects, isAuthenticated, distractions, focusSession, isServerLoaded]);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -369,7 +393,7 @@ export default function App() {
     }
   };
 
-  // GitHub Pull and Push Handlers
+  // GitHub Handlers
   const handleSaveGitHubConfig = (updated: GitHubSyncConfig) => {
     setGithubConfig(updated);
     saveGitHubConfig(updated);
@@ -399,10 +423,25 @@ export default function App() {
     const success = await saveWebsiteData(projects, distractions);
     if (success) {
       setServerLastSaved(new Date().toISOString());
-      setToastMessage('Saved directly to website server!');
+      setToastMessage('Saved directly to website server (data/app_data.json)!');
     } else {
       throw new Error('Failed to save to website server');
     }
+  };
+
+  // Cloudflare D1 Handlers
+  const handleSaveD1Config = (updated: CloudflareD1Config) => {
+    setD1Config(updated);
+    saveCloudflareD1Config(updated);
+  };
+
+  const handleDataLoadedFromD1 = (newProjects: Project[], newDistractions: DistractionNote[]) => {
+    setProjects(newProjects);
+    setDistractions(newDistractions);
+    saveProjects(newProjects);
+    saveDistractions(newDistractions);
+    saveWebsiteData(newProjects, newDistractions);
+    setToastMessage(`Loaded ${newProjects.length} projects from Cloudflare D1!`);
   };
 
   // Compute platform counts and stats
@@ -456,13 +495,14 @@ export default function App() {
         className="hidden"
       />
 
-      {/* Strict Top Bar Contract Header with persistent Back Navigation, Sync & Logout */}
+      {/* Strict Top Bar Contract Header with persistent Back Navigation, D1 & Sync */}
       <Header
         currentProjectName={currentSelectedProject?.name}
         distractionCount={distractions.filter((n) => !n.resolved).length}
         onOpenNewProject={() => setIsNewProjectModalOpen(true)}
         onOpenDistractions={() => setIsDistractionDrawerOpen(true)}
         onOpenSyncModal={() => setIsSyncModalOpen(true)}
+        onOpenD1Modal={() => setIsD1ModalOpen(true)}
         onExport={handleExportBackup}
         onImportClick={() => fileInputRef.current?.click()}
         soundEnabled={focusSession.soundEnabled}
@@ -471,6 +511,8 @@ export default function App() {
         }
         onGoHome={() => setSelectedProjectId(null)}
         onLogout={handleLogout}
+        isD1Configured={d1Config.connected || Boolean(d1Config.databaseId)}
+        isD1Live={isD1Live}
       />
 
       {/* In-app Toast Banner */}
@@ -569,6 +611,17 @@ export default function App() {
         )}
       </main>
 
+      {/* Cloudflare D1 Database Modal */}
+      <CloudflareD1Modal
+        isOpen={isD1ModalOpen}
+        onClose={() => setIsD1ModalOpen(false)}
+        config={d1Config}
+        onSaveConfig={handleSaveD1Config}
+        projects={projects}
+        distractions={distractions}
+        onDataLoadedFromD1={handleDataLoadedFromD1}
+      />
+
       {/* Cross-Device / GitHub Sync Modal */}
       <GitHubSyncModal
         isOpen={isSyncModalOpen}
@@ -635,9 +688,9 @@ export default function App() {
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
           <span>ProjectPulse · Multi-Platform App Execution Tracker</span>
           <span className="text-slate-400">
-            {serverLastSaved
-              ? 'Synced with website server'
-              : 'Local & Website file sync enabled'}
+            {d1Config.connected
+              ? 'Cloudflare D1 (env.DB) Connected'
+              : 'Website Server & Cloudflare D1 Ready'}
           </span>
         </div>
       </footer>

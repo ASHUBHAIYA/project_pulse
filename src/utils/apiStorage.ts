@@ -1,4 +1,4 @@
-import { DistractionNote, Project } from '../types';
+import { DistractionNote, FocusSession, Project } from '../types';
 
 export interface GitHubSyncConfig {
   mode: 'none' | 'gist' | 'repo' | 'raw';
@@ -45,13 +45,17 @@ export function saveGitHubConfig(config: GitHubSyncConfig): void {
 }
 
 // ----------------------------------------------------------------------
-// Website Server File Storage (stored directly in the website itself)
+// Website Server File & Cloudflare D1 Storage
 // ----------------------------------------------------------------------
 
 export async function fetchWebsiteData(): Promise<{
   exists: boolean;
   projects: Project[] | null;
   distractions: DistractionNote[] | null;
+  focusSession?: FocusSession | null;
+  isLiveBinding?: boolean;
+  provider?: string;
+  binding?: string;
   updatedAt?: string;
 } | null> {
   try {
@@ -66,13 +70,14 @@ export async function fetchWebsiteData(): Promise<{
 
 export async function saveWebsiteData(
   projects: Project[],
-  distractions: DistractionNote[]
+  distractions: DistractionNote[],
+  focusSession?: FocusSession | null
 ): Promise<boolean> {
   try {
     const res = await fetch('/api/data', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projects, distractions }),
+      body: JSON.stringify({ projects, distractions, focusSession }),
     });
     return res.ok;
   } catch (err) {
