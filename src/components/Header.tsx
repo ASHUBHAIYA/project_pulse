@@ -1,7 +1,8 @@
 import React from 'react';
-import { Layers, Plus, Lightbulb, Download, Upload, Volume2, VolumeX } from 'lucide-react';
+import { Layers, Plus, Lightbulb, Download, Upload, Volume2, VolumeX, ArrowLeft, LogOut } from 'lucide-react';
 
 interface HeaderProps {
+  currentProjectName?: string | null;
   distractionCount: number;
   onOpenNewProject: () => void;
   onOpenDistractions: () => void;
@@ -10,9 +11,11 @@ interface HeaderProps {
   soundEnabled: boolean;
   onToggleSound: () => void;
   onGoHome: () => void;
+  onLogout: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
+  currentProjectName,
   distractionCount,
   onOpenNewProject,
   onOpenDistractions,
@@ -21,29 +24,52 @@ export const Header: React.FC<HeaderProps> = ({
   soundEnabled,
   onToggleSound,
   onGoHome,
+  onLogout,
 }) => {
   return (
-    <header className="sticky top-0 z-40 bg-[#0b0f17]/90 backdrop-blur-md border-b border-slate-800/80 px-4 sm:px-8 py-3.5 transition-colors">
+    <header className="sticky top-0 z-40 bg-[#0b0f17]/95 backdrop-blur-md border-b border-slate-800/80 px-4 sm:px-8 py-3 transition-colors">
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
-        {/* Zone 1: Wordmark */}
-        <button
-          onClick={onGoHome}
-          className="flex items-center gap-2.5 text-left group transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 rounded-lg p-1"
-        >
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-cyan-500 to-emerald-400 p-[1px] shadow-sm">
-            <div className="w-full h-full bg-[#0f172a] rounded-[7px] flex items-center justify-center group-hover:bg-[#131d35] transition-colors">
-              <Layers className="w-4 h-4 text-cyan-400" />
+        {/* Zone 1: Navigation / Brand */}
+        <div className="flex items-center gap-3">
+          {/* Explicit Back to Projects Navigation Button when viewing a project */}
+          {currentProjectName ? (
+            <button
+              onClick={onGoHome}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-cyan-300 hover:text-white border border-cyan-500/30 text-xs font-bold transition-all shadow-sm group active:scale-[0.98]"
+              title="Return to Projects list"
+            >
+              <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+              <span>Back to Projects</span>
+            </button>
+          ) : (
+            <button
+              onClick={onGoHome}
+              className="flex items-center gap-2.5 text-left group transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 rounded-lg p-1"
+            >
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-cyan-500 to-emerald-400 p-[1px] shadow-sm">
+                <div className="w-full h-full bg-[#0f172a] rounded-[7px] flex items-center justify-center group-hover:bg-[#131d35] transition-colors">
+                  <Layers className="w-4 h-4 text-cyan-400" />
+                </div>
+              </div>
+              <div>
+                <span className="font-extrabold text-base tracking-tight text-white block leading-none">
+                  ProjectPulse
+                </span>
+                <span className="text-[11px] text-slate-400 font-mono leading-none mt-1 block">
+                  Multi-App Pipeline
+                </span>
+              </div>
+            </button>
+          )}
+
+          {/* Contextual Project Indicator if viewing details */}
+          {currentProjectName && (
+            <div className="hidden sm:flex items-center gap-2 text-xs font-mono text-slate-400 border-l border-slate-800 pl-3">
+              <span className="text-slate-500">Project:</span>
+              <span className="text-white font-bold truncate max-w-xs">{currentProjectName}</span>
             </div>
-          </div>
-          <div>
-            <span className="font-extrabold text-base tracking-tight text-white block leading-none">
-              ProjectPulse
-            </span>
-            <span className="text-[11px] text-slate-400 font-mono leading-none mt-1 block">
-              Multi-App Pipeline
-            </span>
-          </div>
-        </button>
+          )}
+        </div>
 
         {/* Zone 2: Navigation & Quick Utilities */}
         <nav className="hidden md:flex items-center gap-2 text-sm">
@@ -92,7 +118,7 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         </nav>
 
-        {/* Zone 3: Primary CTA */}
+        {/* Zone 3: Primary CTA & Lock/Logout */}
         <div className="flex items-center gap-2">
           {/* Mobile Parking Lot trigger */}
           <button
@@ -109,6 +135,15 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <Plus className="w-4 h-4 stroke-[2.5]" />
             <span>New Project</span>
+          </button>
+
+          {/* Lock / Logout Button */}
+          <button
+            onClick={onLogout}
+            className="p-2 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
+            title="Lock workspace / Log out"
+          >
+            <LogOut className="w-4 h-4" />
           </button>
         </div>
       </div>

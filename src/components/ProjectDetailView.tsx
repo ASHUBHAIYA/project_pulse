@@ -145,10 +145,11 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
       <div className="flex items-center justify-between">
         <button
           onClick={onBack}
-          className="inline-flex items-center gap-2 text-xs font-semibold text-slate-400 hover:text-cyan-300 transition-colors py-1 group"
+          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 hover:text-white border border-slate-700 hover:border-cyan-500/40 text-xs font-bold transition-all shadow-sm group active:scale-[0.98]"
+          title="Return to projects overview"
         >
-          <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
-          <span>Back to All Projects</span>
+          <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform text-cyan-400" />
+          <span>← Back to All Projects</span>
         </button>
 
         <div className="flex items-center gap-2">

@@ -15,7 +15,9 @@ import {
   exportBackup,
   importBackup,
 } from './utils/storage';
+import { isSessionAuthenticated, setSessionAuthenticated } from './utils/auth';
 import { sound } from './utils/audio';
+import { LoginView } from './components/LoginView';
 import { Header } from './components/Header';
 import { ActiveFocusBanner } from './components/ActiveFocusBanner';
 import { PlatformFilterBar } from './components/PlatformFilterBar';
@@ -29,6 +31,9 @@ import { ConfirmModal } from './components/ConfirmModal';
 import { Plus, Layers, CheckCircle2 } from 'lucide-react';
 
 export default function App() {
+  // Authentication State
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => isSessionAuthenticated());
+
   // Main Data States
   const [projects, setProjects] = useState<Project[]>(() => loadProjects());
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
@@ -72,20 +77,26 @@ export default function App() {
 
   // Save changes to localStorage
   useEffect(() => {
-    saveProjects(projects);
-  }, [projects]);
+    if (isAuthenticated) {
+      saveProjects(projects);
+    }
+  }, [projects, isAuthenticated]);
 
   useEffect(() => {
-    saveDistractions(distractions);
-  }, [distractions]);
+    if (isAuthenticated) {
+      saveDistractions(distractions);
+    }
+  }, [distractions, isAuthenticated]);
 
   useEffect(() => {
-    saveFocusSession(focusSession);
-  }, [focusSession]);
+    if (isAuthenticated) {
+      saveFocusSession(focusSession);
+    }
+  }, [focusSession, isAuthenticated]);
 
   // Focus Timer Tick Interval
   useEffect(() => {
-    if (!focusSession.timerRunning) return;
+    if (!isAuthenticated || !focusSession.timerRunning) return;
 
     const interval = setInterval(() => {
       setFocusSession((prev) => {
@@ -107,10 +118,11 @@ export default function App() {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [focusSession.timerRunning, focusSession.targetMinutes, focusSession.soundEnabled]);
+  }, [focusSession.timerRunning, focusSession.targetMinutes, focusSession.soundEnabled, isAuthenticated]);
 
   // Global Keyboard Shortcut: Cmd/Ctrl + K opens Idea Parking Lot
   useEffect(() => {
+    if (!isAuthenticated) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
@@ -119,7 +131,7 @@ export default function App() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [isAuthenticated]);
 
   // Current Active Focus Project & Step resolution
   const activeProject =
@@ -135,6 +147,13 @@ export default function App() {
 
   // Selected project for detailed view
   const currentSelectedProject = projects.find((p) => p.id === selectedProjectId) || null;
+
+  // Logout Handler
+  const handleLogout = () => {
+    setSessionAuthenticated(false);
+    setIsAuthenticated(false);
+    setSelectedProjectId(null);
+  };
 
   // Project Management Actions
   const handleCreateProject = (newProj: Project) => {
@@ -330,6 +349,11 @@ export default function App() {
     return true;
   });
 
+  // If user is not authenticated, show secure Login View
+  if (!isAuthenticated) {
+    return <LoginView onLoginSuccess={() => setIsAuthenticated(true)} />;
+  }
+
   return (
     <div className="min-h-screen bg-[#0b0f17] text-slate-100 flex flex-col">
       {/* Hidden input for backup file restore */}
@@ -341,8 +365,9 @@ export default function App() {
         className="hidden"
       />
 
-      {/* Strict Top Bar Contract Header */}
+      {/* Strict Top Bar Contract Header with persistent Back Navigation & Logout */}
       <Header
+        currentProjectName={currentSelectedProject?.name}
         distractionCount={distractions.filter((n) => !n.resolved).length}
         onOpenNewProject={() => setIsNewProjectModalOpen(true)}
         onOpenDistractions={() => setIsDistractionDrawerOpen(true)}
@@ -353,6 +378,7 @@ export default function App() {
           setFocusSession((prev) => ({ ...prev, soundEnabled: !prev.soundEnabled }))
         }
         onGoHome={() => setSelectedProjectId(null)}
+        onLogout={handleLogout}
       />
 
       {/* In-app Toast Banner */}
