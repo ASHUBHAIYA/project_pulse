@@ -1,11 +1,12 @@
 import React from 'react';
-import { Layers, Plus, Lightbulb, Download, Upload, Volume2, VolumeX, ArrowLeft, LogOut } from 'lucide-react';
+import { Layers, Plus, Lightbulb, Download, Upload, Volume2, VolumeX, ArrowLeft, LogOut, Server, Github } from 'lucide-react';
 
 interface HeaderProps {
   currentProjectName?: string | null;
   distractionCount: number;
   onOpenNewProject: () => void;
   onOpenDistractions: () => void;
+  onOpenSyncModal: () => void;
   onExport: () => void;
   onImportClick: () => void;
   soundEnabled: boolean;
@@ -19,6 +20,7 @@ export const Header: React.FC<HeaderProps> = ({
   distractionCount,
   onOpenNewProject,
   onOpenDistractions,
+  onOpenSyncModal,
   onExport,
   onImportClick,
   soundEnabled,
@@ -73,6 +75,16 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Zone 2: Navigation & Quick Utilities */}
         <nav className="hidden md:flex items-center gap-2 text-sm">
+          {/* Cross-Device & GitHub Sync */}
+          <button
+            onClick={onOpenSyncModal}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-slate-300 hover:text-cyan-300 hover:bg-slate-800/60 transition-colors text-xs font-medium border border-transparent hover:border-cyan-500/30"
+            title="Cross-device sync & GitHub integration"
+          >
+            <Server className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Cross-Device / GitHub</span>
+          </button>
+
           <button
             onClick={onOpenDistractions}
             className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/60 transition-colors text-xs font-medium"
@@ -120,6 +132,15 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Zone 3: Primary CTA & Lock/Logout */}
         <div className="flex items-center gap-2">
+          {/* Mobile Sync trigger */}
+          <button
+            onClick={onOpenSyncModal}
+            className="md:hidden p-2 rounded-lg text-slate-300 hover:bg-slate-800"
+            title="Cross-Device / GitHub Sync"
+          >
+            <Server className="w-4 h-4 text-cyan-400" />
+          </button>
+
           {/* Mobile Parking Lot trigger */}
           <button
             onClick={onOpenDistractions}
