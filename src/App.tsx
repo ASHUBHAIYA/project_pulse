@@ -64,6 +64,7 @@ export default function App() {
   // Cross-device & GitHub Sync Config
   const [githubConfig, setGithubConfig] = useState<GitHubSyncConfig>(() => loadGitHubConfig());
   const [serverLastSaved, setServerLastSaved] = useState<string | null>(null);
+  const [isServerLoaded, setIsServerLoaded] = useState(false);
 
   // Modal / Drawer visibility
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
@@ -76,26 +77,37 @@ export default function App() {
   // Hidden file input for JSON import
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // On mount: fetch latest data stored in the website itself
+  // On mount and on authentication: load data directly from data/app_data.json on website server
   useEffect(() => {
     let mounted = true;
-    fetchWebsiteData().then((res) => {
-      if (!mounted || !res) return;
-      if (res.exists && Array.isArray(res.projects) && res.projects.length > 0) {
-        setProjects(res.projects);
-        if (res.distractions) setDistractions(res.distractions);
-        setServerLastSaved(res.updatedAt || new Date().toISOString());
-      } else {
-        // Save initial state to website server file so it exists for all devices
-        saveWebsiteData(projects, distractions).then(() => {
-          if (mounted) setServerLastSaved(new Date().toISOString());
-        });
-      }
-    });
+    fetchWebsiteData()
+      .then((res) => {
+        if (!mounted) return;
+        if (res && res.exists && Array.isArray(res.projects) && res.projects.length > 0) {
+          setProjects(res.projects);
+          if (Array.isArray(res.distractions)) {
+            setDistractions(res.distractions);
+          }
+          saveProjects(res.projects);
+          if (res.distractions) saveDistractions(res.distractions);
+          setServerLastSaved(res.updatedAt || new Date().toISOString());
+        } else {
+          // Initialize server file if not present yet
+          saveWebsiteData(projects, distractions).then(() => {
+            if (mounted) setServerLastSaved(new Date().toISOString());
+          });
+        }
+        setIsServerLoaded(true);
+      })
+      .catch((err) => {
+        console.warn('Could not read website server data file:', err);
+        if (mounted) setIsServerLoaded(true);
+      });
+
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [isAuthenticated]);
 
   // Save viewMode to localStorage
   useEffect(() => {
@@ -111,18 +123,18 @@ export default function App() {
     return () => clearTimeout(t);
   }, [toastMessage]);
 
-  // Save changes to localStorage and website backend file (debounced)
+  // Save changes to localStorage and website backend file (debounced, only after server file has been loaded)
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && isServerLoaded) {
       saveProjects(projects);
       const timer = setTimeout(() => {
         saveWebsiteData(projects, distractions).then((ok) => {
           if (ok) setServerLastSaved(new Date().toISOString());
         });
-      }, 800);
+      }, 500);
       return () => clearTimeout(timer);
     }
-  }, [projects, isAuthenticated, distractions]);
+  }, [projects, isAuthenticated, distractions, isServerLoaded]);
 
   useEffect(() => {
     if (isAuthenticated) {

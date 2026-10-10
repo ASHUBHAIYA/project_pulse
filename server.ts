@@ -44,7 +44,7 @@ app.get('/api/data', (req, res) => {
   }
 });
 
-// POST /api/data - Save data directly into the website's server file
+// POST /api/data - Save data directly into the website's server file (data/app_data.json)
 app.post('/api/data', (req, res) => {
   try {
     const { projects, distractions } = req.body;
@@ -60,6 +60,43 @@ app.post('/api/data', (req, res) => {
     return res.status(500).json({ error: 'Failed to write data file' });
   }
 });
+
+// GET /api/data/download - Download app_data.json directly from server
+app.get('/api/data/download', (req, res) => {
+  if (fs.existsSync(DATA_FILE)) {
+    return res.download(DATA_FILE, 'app_data.json');
+  }
+  return res.status(404).json({ error: 'data/app_data.json not found' });
+});
+
+// GET /api/data/info - Metadata info about data/app_data.json
+app.get('/api/data/info', (req, res) => {
+  try {
+    if (fs.existsSync(DATA_FILE)) {
+      const stats = fs.statSync(DATA_FILE);
+      const content = fs.readFileSync(DATA_FILE, 'utf-8');
+      const parsed = JSON.parse(content);
+      const projects = Array.isArray(parsed.projects) ? parsed.projects : [];
+      let totalSteps = 0;
+      projects.forEach((p: { steps?: unknown[] }) => {
+        if (Array.isArray(p.steps)) totalSteps += p.steps.length;
+      });
+
+      return res.json({
+        exists: true,
+        path: 'data/app_data.json',
+        sizeBytes: stats.size,
+        projectCount: projects.length,
+        stepCount: totalSteps,
+        updatedAt: parsed.updatedAt || stats.mtime.toISOString(),
+      });
+    }
+    return res.json({ exists: false, path: 'data/app_data.json' });
+  } catch (err) {
+    return res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 
 // -------------------------------------------------------------
 // GitHub Integration Endpoints (Pull from GitHub / Push to GitHub)
