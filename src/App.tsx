@@ -15,6 +15,15 @@ import {
   exportBackup,
   importBackup,
 } from './utils/storage';
+import {
+  fetchWebsiteData,
+  saveWebsiteData,
+  loadGitHubConfig,
+  saveGitHubConfig,
+  pullDataFromGitHub,
+  pushDataToGitHub,
+  GitHubSyncConfig,
+} from './utils/apiStorage';
 import { isSessionAuthenticated, setSessionAuthenticated } from './utils/auth';
 import { sound } from './utils/audio';
 import { LoginView } from './components/LoginView';
@@ -28,6 +37,7 @@ import { DistractionDrawer } from './components/DistractionDrawer';
 import { CheckInModal } from './components/CheckInModal';
 import { NewProjectModal } from './components/NewProjectModal';
 import { ConfirmModal } from './components/ConfirmModal';
+import { GitHubSyncModal } from './components/GitHubSyncModal';
 import { Plus, Layers, CheckCircle2 } from 'lucide-react';
 
 export default function App() {
@@ -51,15 +61,41 @@ export default function App() {
     return 'grid';
   });
 
+  // Cross-device & GitHub Sync Config
+  const [githubConfig, setGithubConfig] = useState<GitHubSyncConfig>(() => loadGitHubConfig());
+  const [serverLastSaved, setServerLastSaved] = useState<string | null>(null);
+
   // Modal / Drawer visibility
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
   const [isDistractionDrawerOpen, setIsDistractionDrawerOpen] = useState(false);
   const [isCheckInModalOpen, setIsCheckInModalOpen] = useState(false);
+  const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [projectPendingDelete, setProjectPendingDelete] = useState<Project | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Hidden file input for JSON import
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // On mount: fetch latest data stored in the website itself
+  useEffect(() => {
+    let mounted = true;
+    fetchWebsiteData().then((res) => {
+      if (!mounted || !res) return;
+      if (res.exists && Array.isArray(res.projects) && res.projects.length > 0) {
+        setProjects(res.projects);
+        if (res.distractions) setDistractions(res.distractions);
+        setServerLastSaved(res.updatedAt || new Date().toISOString());
+      } else {
+        // Save initial state to website server file so it exists for all devices
+        saveWebsiteData(projects, distractions).then(() => {
+          if (mounted) setServerLastSaved(new Date().toISOString());
+        });
+      }
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   // Save viewMode to localStorage
   useEffect(() => {
@@ -75,12 +111,18 @@ export default function App() {
     return () => clearTimeout(t);
   }, [toastMessage]);
 
-  // Save changes to localStorage
+  // Save changes to localStorage and website backend file (debounced)
   useEffect(() => {
     if (isAuthenticated) {
       saveProjects(projects);
+      const timer = setTimeout(() => {
+        saveWebsiteData(projects, distractions).then((ok) => {
+          if (ok) setServerLastSaved(new Date().toISOString());
+        });
+      }, 800);
+      return () => clearTimeout(timer);
     }
-  }, [projects, isAuthenticated]);
+  }, [projects, isAuthenticated, distractions]);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -306,11 +348,48 @@ export default function App() {
       const data = await importBackup(file);
       setProjects(data.projects);
       if (data.distractions) setDistractions(data.distractions);
+      saveWebsiteData(data.projects, data.distractions || []);
       setToastMessage('Backup data restored successfully!');
     } catch (err) {
       setToastMessage(`Import failed: ${(err as Error).message}`);
     } finally {
       if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  // GitHub Pull and Push Handlers
+  const handleSaveGitHubConfig = (updated: GitHubSyncConfig) => {
+    setGithubConfig(updated);
+    saveGitHubConfig(updated);
+  };
+
+  const handlePullFromGitHub = async () => {
+    const result = await pullDataFromGitHub(githubConfig);
+    setProjects(result.projects);
+    setDistractions(result.distractions);
+    saveProjects(result.projects);
+    saveDistractions(result.distractions);
+    saveWebsiteData(result.projects, result.distractions);
+    setToastMessage('Synced data from GitHub!');
+  };
+
+  const handlePushToGitHub = async () => {
+    const res = await pushDataToGitHub(githubConfig, projects, distractions);
+    if (res.gistId && !githubConfig.gistId) {
+      const updated = { ...githubConfig, gistId: res.gistId };
+      setGithubConfig(updated);
+      saveGitHubConfig(updated);
+    }
+    setToastMessage('Successfully pushed data to GitHub!');
+  };
+
+  const handleForceSaveToWebsite = async () => {
+    const success = await saveWebsiteData(projects, distractions);
+    if (success) {
+      setServerLastSaved(new Date().toISOString());
+      setToastMessage('Saved directly to website server!');
+    } else {
+      throw new Error('Failed to save to website server');
     }
   };
 
@@ -365,12 +444,13 @@ export default function App() {
         className="hidden"
       />
 
-      {/* Strict Top Bar Contract Header with persistent Back Navigation & Logout */}
+      {/* Strict Top Bar Contract Header with persistent Back Navigation, Sync & Logout */}
       <Header
         currentProjectName={currentSelectedProject?.name}
         distractionCount={distractions.filter((n) => !n.resolved).length}
         onOpenNewProject={() => setIsNewProjectModalOpen(true)}
         onOpenDistractions={() => setIsDistractionDrawerOpen(true)}
+        onOpenSyncModal={() => setIsSyncModalOpen(true)}
         onExport={handleExportBackup}
         onImportClick={() => fileInputRef.current?.click()}
         soundEnabled={focusSession.soundEnabled}
@@ -477,6 +557,18 @@ export default function App() {
         )}
       </main>
 
+      {/* Cross-Device / GitHub Sync Modal */}
+      <GitHubSyncModal
+        isOpen={isSyncModalOpen}
+        onClose={() => setIsSyncModalOpen(false)}
+        config={githubConfig}
+        onSaveConfig={handleSaveGitHubConfig}
+        onPullFromGitHub={handlePullFromGitHub}
+        onPushToGitHub={handlePushToGitHub}
+        onForceSaveToWebsite={handleForceSaveToWebsite}
+        serverLastSaved={serverLastSaved}
+      />
+
       {/* In-app Confirmation Modal for Deleting Project from Dashboard */}
       <ConfirmModal
         isOpen={!!projectPendingDelete}
@@ -531,7 +623,9 @@ export default function App() {
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
           <span>ProjectPulse · Multi-Platform App Execution Tracker</span>
           <span className="text-slate-400">
-            Tip: Press <kbd className="px-1.5 py-0.5 bg-slate-800 text-slate-200 rounded border border-slate-700">Cmd+K</kbd> to park distraction thoughts
+            {serverLastSaved
+              ? 'Synced with website server'
+              : 'Local & Website file sync enabled'}
           </span>
         </div>
       </footer>
