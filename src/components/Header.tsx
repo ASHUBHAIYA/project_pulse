@@ -75,14 +75,15 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Zone 2: Navigation & Quick Utilities */}
         <nav className="hidden md:flex items-center gap-2 text-sm">
-          {/* Cross-Device & GitHub Sync */}
+          {/* Cross-Device Website Server File Badge & GitHub Sync */}
           <button
             onClick={onOpenSyncModal}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-slate-300 hover:text-cyan-300 hover:bg-slate-800/60 transition-colors text-xs font-medium border border-transparent hover:border-cyan-500/30"
-            title="Cross-device sync & GitHub integration"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 transition-colors text-xs font-mono font-medium"
+            title="Stored directly in website server file: data/app_data.json (Click to manage)"
           >
-            <Server className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Cross-Device / GitHub</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <Server className="w-3.5 h-3.5 text-emerald-400" />
+            <span>data/app_data.json</span>
           </button>
 
           <button
