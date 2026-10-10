@@ -1,0 +1,6 @@
+{
+  "name": "ProjectPulse",
+  "description": "Multi-platform project roadmap and step execution tracker with visual progress rings, checklist milestones, and focus check-ins for Android, Web, and Hybrid developers.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

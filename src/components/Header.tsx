@@ -1,0 +1,117 @@
+import React from 'react';
+import { Layers, Plus, Lightbulb, Download, Upload, Volume2, VolumeX } from 'lucide-react';
+
+interface HeaderProps {
+  distractionCount: number;
+  onOpenNewProject: () => void;
+  onOpenDistractions: () => void;
+  onExport: () => void;
+  onImportClick: () => void;
+  soundEnabled: boolean;
+  onToggleSound: () => void;
+  onGoHome: () => void;
+}
+
+export const Header: React.FC<HeaderProps> = ({
+  distractionCount,
+  onOpenNewProject,
+  onOpenDistractions,
+  onExport,
+  onImportClick,
+  soundEnabled,
+  onToggleSound,
+  onGoHome,
+}) => {
+  return (
+    <header className="sticky top-0 z-40 bg-[#0b0f17]/90 backdrop-blur-md border-b border-slate-800/80 px-4 sm:px-8 py-3.5 transition-colors">
+      <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+        {/* Zone 1: Wordmark */}
+        <button
+          onClick={onGoHome}
+          className="flex items-center gap-2.5 text-left group transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 rounded-lg p-1"
+        >
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-cyan-500 to-emerald-400 p-[1px] shadow-sm">
+            <div className="w-full h-full bg-[#0f172a] rounded-[7px] flex items-center justify-center group-hover:bg-[#131d35] transition-colors">
+              <Layers className="w-4 h-4 text-cyan-400" />
+            </div>
+          </div>
+          <div>
+            <span className="font-extrabold text-base tracking-tight text-white block leading-none">
+              ProjectPulse
+            </span>
+            <span className="text-[11px] text-slate-400 font-mono leading-none mt-1 block">
+              Multi-App Pipeline
+            </span>
+          </div>
+        </button>
+
+        {/* Zone 2: Navigation & Quick Utilities */}
+        <nav className="hidden md:flex items-center gap-2 text-sm">
+          <button
+            onClick={onOpenDistractions}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/60 transition-colors text-xs font-medium"
+            title="Open distraction parking lot to store intrusive thoughts without getting sidetracked"
+          >
+            <Lightbulb className="w-3.5 h-3.5 text-amber-400" />
+            <span>Idea Parking Lot</span>
+            {distractionCount > 0 && (
+              <span className="font-mono text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.2 rounded font-semibold tabular-nums">
+                {distractionCount}
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={onExport}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/60 transition-colors text-xs font-medium"
+            title="Download JSON backup"
+          >
+            <Download className="w-3.5 h-3.5 text-slate-400" />
+            <span>Export Backup</span>
+          </button>
+
+          <button
+            onClick={onImportClick}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/60 transition-colors text-xs font-medium"
+            title="Restore from JSON backup"
+          >
+            <Upload className="w-3.5 h-3.5 text-slate-400" />
+            <span>Import</span>
+          </button>
+
+          <button
+            onClick={onToggleSound}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition-colors"
+            title={soundEnabled ? 'Mute chimes' : 'Enable sound chimes'}
+          >
+            {soundEnabled ? (
+              <Volume2 className="w-4 h-4 text-emerald-400" />
+            ) : (
+              <VolumeX className="w-4 h-4 text-slate-500" />
+            )}
+          </button>
+        </nav>
+
+        {/* Zone 3: Primary CTA */}
+        <div className="flex items-center gap-2">
+          {/* Mobile Parking Lot trigger */}
+          <button
+            onClick={onOpenDistractions}
+            className="md:hidden p-2 rounded-lg text-slate-300 hover:bg-slate-800"
+            title="Idea Parking Lot"
+          >
+            <Lightbulb className="w-4 h-4 text-amber-400" />
+          </button>
+
+          <button
+            onClick={onOpenNewProject}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950 font-bold text-xs shadow-sm hover:shadow-cyan-500/20 transition-all whitespace-nowrap active:scale-[0.98]"
+          >
+            <Plus className="w-4 h-4 stroke-[2.5]" />
+            <span>New Project</span>
+          </button>
+        </div>
+      </div>
+    </header>
+  );
+};
