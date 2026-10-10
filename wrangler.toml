@@ -12,3 +12,6 @@ binding = "DB"
 database_name = "projectpulse-db"
 database_id = "41ee0122-5980-44b7-881e-4b532999852b" # Replace with your D1 database ID from 'wrangler d1 create projectpulse-db'
 migrations_dir = "migrations"
+
+[vars]
+VITE_CONFIG_NATIVE_IGNORE_WARNING = "true"
