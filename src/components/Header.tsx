@@ -1,5 +1,5 @@
 import React from 'react';
-import { Layers, Plus, Lightbulb, Download, Upload, Volume2, VolumeX, ArrowLeft, LogOut, Server, Github } from 'lucide-react';
+import { Layers, Plus, Lightbulb, Download, Upload, Volume2, VolumeX, ArrowLeft, LogOut, Server, Database } from 'lucide-react';
 
 interface HeaderProps {
   currentProjectName?: string | null;
@@ -7,12 +7,15 @@ interface HeaderProps {
   onOpenNewProject: () => void;
   onOpenDistractions: () => void;
   onOpenSyncModal: () => void;
+  onOpenD1Modal: () => void;
   onExport: () => void;
   onImportClick: () => void;
   soundEnabled: boolean;
   onToggleSound: () => void;
   onGoHome: () => void;
   onLogout: () => void;
+  isD1Configured?: boolean;
+  isD1Live?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -21,12 +24,15 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenNewProject,
   onOpenDistractions,
   onOpenSyncModal,
+  onOpenD1Modal,
   onExport,
   onImportClick,
   soundEnabled,
   onToggleSound,
   onGoHome,
   onLogout,
+  isD1Configured,
+  isD1Live,
 }) => {
   return (
     <header className="sticky top-0 z-40 bg-[#0b0f17]/95 backdrop-blur-md border-b border-slate-800/80 px-4 sm:px-8 py-3 transition-colors">
@@ -75,7 +81,28 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Zone 2: Navigation & Quick Utilities */}
         <nav className="hidden md:flex items-center gap-2 text-sm">
-          {/* Cross-Device Website Server File Badge & GitHub Sync */}
+          {/* Cloudflare D1 Database Trigger */}
+          <button
+            onClick={onOpenD1Modal}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-mono font-medium transition-colors ${
+              isD1Live
+                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25'
+                : isD1Configured
+                ? 'bg-orange-500/15 border-orange-500/40 text-orange-300 hover:bg-orange-500/25'
+                : 'bg-slate-800/80 border-slate-700/80 text-orange-400 hover:text-orange-300 hover:bg-slate-800'
+            }`}
+            title="Cloudflare D1 Database binding (env.DB) and query tools"
+          >
+            <Database className="w-3.5 h-3.5 text-orange-400" />
+            <span>{isD1Live ? 'D1: Live env.DB' : 'Cloudflare D1'}</span>
+            {isD1Live ? (
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            ) : isD1Configured ? (
+              <span className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse" />
+            ) : null}
+          </button>
+
+          {/* Website Server File Badge & GitHub Sync */}
           <button
             onClick={onOpenSyncModal}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 transition-colors text-xs font-mono font-medium"
@@ -133,13 +160,22 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Zone 3: Primary CTA & Lock/Logout */}
         <div className="flex items-center gap-2">
+          {/* Mobile Cloudflare D1 trigger */}
+          <button
+            onClick={onOpenD1Modal}
+            className="md:hidden p-2 rounded-lg text-orange-400 hover:bg-slate-800"
+            title="Cloudflare D1 Database"
+          >
+            <Database className="w-4 h-4" />
+          </button>
+
           {/* Mobile Sync trigger */}
           <button
             onClick={onOpenSyncModal}
             className="md:hidden p-2 rounded-lg text-slate-300 hover:bg-slate-800"
-            title="Cross-Device / GitHub Sync"
+            title="Cross-Device Storage Sync"
           >
-            <Server className="w-4 h-4 text-cyan-400" />
+            <Server className="w-4 h-4 text-emerald-400" />
           </button>
 
           {/* Mobile Parking Lot trigger */}

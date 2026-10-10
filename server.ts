@@ -34,10 +34,11 @@ app.get('/api/data', (req, res) => {
         exists: true,
         projects: parsed.projects || null,
         distractions: parsed.distractions || null,
+        focusSession: parsed.focusSession || null,
         updatedAt: parsed.updatedAt || null,
       });
     }
-    return res.json({ exists: false, projects: null, distractions: null });
+    return res.json({ exists: false, projects: null, distractions: null, focusSession: null });
   } catch (err) {
     console.error('Error reading website data file:', err);
     return res.status(500).json({ error: 'Failed to read data file' });
@@ -47,10 +48,11 @@ app.get('/api/data', (req, res) => {
 // POST /api/data - Save data directly into the website's server file (data/app_data.json)
 app.post('/api/data', (req, res) => {
   try {
-    const { projects, distractions } = req.body;
+    const { projects, distractions, focusSession } = req.body;
     const payload = {
       projects: projects || [],
       distractions: distractions || [],
+      focusSession: focusSession || null,
       updatedAt: new Date().toISOString(),
     };
     fs.writeFileSync(DATA_FILE, JSON.stringify(payload, null, 2), 'utf-8');
@@ -286,6 +288,288 @@ app.post('/api/github/push', async (req, res) => {
     return res.status(400).json({ error: 'Specify Gist ID or Repo + file path' });
   } catch (err) {
     console.error('GitHub push error:', err);
+    return res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// -------------------------------------------------------------
+// Cloudflare D1 Database REST API & Sync Endpoints
+// -------------------------------------------------------------
+
+// Helper to query Cloudflare D1 via Cloudflare Client API v4
+async function queryCloudflareD1(
+  accountId: string,
+  databaseId: string,
+  apiToken: string,
+  sql: string,
+  params: unknown[] = []
+) {
+  const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ sql, params }),
+  });
+
+  const json = (await response.json()) as {
+    success: boolean;
+    errors?: Array<{ message: string }>;
+    result?: Array<{ results?: unknown[]; success?: boolean; meta?: unknown }>;
+  };
+
+  if (!response.ok || !json.success) {
+    const errMsg = json.errors?.[0]?.message || response.statusText;
+    throw new Error(`Cloudflare D1 error: ${errMsg}`);
+  }
+
+  return json.result?.[0] || { results: [] };
+}
+
+// POST /api/d1/test-connection - Verify Cloudflare D1 credentials
+app.post('/api/d1/test-connection', async (req, res) => {
+  try {
+    const { accountId, databaseId, apiToken } = req.body;
+    if (!accountId || !databaseId || !apiToken) {
+      return res.status(400).json({ error: 'Account ID, Database ID, and API Token are required.' });
+    }
+
+    const result = await queryCloudflareD1(accountId, databaseId, apiToken, 'SELECT 1 as connected;');
+    return res.json({ success: true, connected: true, result });
+  } catch (err) {
+    return res.status(400).json({ success: false, error: (err as Error).message });
+  }
+});
+
+// POST /api/d1/init-schema - Run schema.sql on Cloudflare D1
+app.post('/api/d1/init-schema', async (req, res) => {
+  try {
+    const { accountId, databaseId, apiToken } = req.body;
+    if (!accountId || !databaseId || !apiToken) {
+      return res.status(400).json({ error: 'Account ID, Database ID, and API Token are required.' });
+    }
+
+    const schemaPath = path.join(__dirname, 'schema.sql');
+    if (!fs.existsSync(schemaPath)) {
+      return res.status(404).json({ error: 'schema.sql not found on server.' });
+    }
+
+    const schemaSql = fs.readFileSync(schemaPath, 'utf-8');
+    // Execute schema statements
+    const statements = schemaSql
+      .split(';')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0 && !s.startsWith('--'));
+
+    for (const sql of statements) {
+      await queryCloudflareD1(accountId, databaseId, apiToken, sql);
+    }
+
+    return res.json({ success: true, message: 'Cloudflare D1 schema initialized successfully!' });
+  } catch (err) {
+    return res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// POST /api/d1/sync - Push current projects & distractions into Cloudflare D1
+app.post('/api/d1/sync', async (req, res) => {
+  try {
+    const { accountId, databaseId, apiToken, projects, distractions } = req.body;
+    if (!accountId || !databaseId || !apiToken) {
+      return res.status(400).json({ error: 'Cloudflare D1 credentials required.' });
+    }
+
+    // 1. Clear existing in D1
+    await queryCloudflareD1(accountId, databaseId, apiToken, 'DELETE FROM projects;');
+    await queryCloudflareD1(accountId, databaseId, apiToken, 'DELETE FROM distractions;');
+
+    // 2. Insert projects
+    for (const p of projects || []) {
+      await queryCloudflareD1(
+        accountId,
+        databaseId,
+        apiToken,
+        'INSERT INTO projects (id, name, platform, description, repository_url, active_step_id, steps_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);',
+        [
+          p.id,
+          p.name,
+          p.platform,
+          p.description || '',
+          p.repositoryUrl || null,
+          p.activeStepId || null,
+          JSON.stringify(p.steps || []),
+          p.createdAt || new Date().toISOString(),
+          p.updatedAt || new Date().toISOString(),
+        ]
+      );
+    }
+
+    // 3. Insert distractions
+    for (const d of distractions || []) {
+      await queryCloudflareD1(
+        accountId,
+        databaseId,
+        apiToken,
+        'INSERT INTO distractions (id, text, project_id, resolved, created_at) VALUES (?, ?, ?, ?, ?);',
+        [d.id, d.text, d.projectId || null, d.resolved ? 1 : 0, d.createdAt || new Date().toISOString()]
+      );
+    }
+
+    return res.json({
+      success: true,
+      syncedProjects: (projects || []).length,
+      syncedDistractions: (distractions || []).length,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// POST /api/d1/pull - Pull from Cloudflare D1 into local data
+app.post('/api/d1/pull', async (req, res) => {
+  try {
+    const { accountId, databaseId, apiToken } = req.body;
+    if (!accountId || !databaseId || !apiToken) {
+      return res.status(400).json({ error: 'Cloudflare D1 credentials required.' });
+    }
+
+    const projResult = await queryCloudflareD1(accountId, databaseId, apiToken, 'SELECT * FROM projects ORDER BY updated_at DESC;');
+    const distResult = await queryCloudflareD1(accountId, databaseId, apiToken, 'SELECT * FROM distractions ORDER BY created_at DESC;');
+
+    const rawProjects = (projResult.results || []) as Array<Record<string, unknown>>;
+    const rawDistractions = (distResult.results || []) as Array<Record<string, unknown>>;
+
+    const projects = rawProjects.map((row) => ({
+      id: row.id as string,
+      name: row.name as string,
+      platform: row.platform as 'android' | 'web' | 'both',
+      description: (row.description as string) || '',
+      repositoryUrl: (row.repository_url as string) || undefined,
+      activeStepId: (row.active_step_id as string) || undefined,
+      steps: row.steps_json ? JSON.parse(row.steps_json as string) : [],
+      createdAt: row.created_at as string,
+      updatedAt: row.updated_at as string,
+    }));
+
+    const distractions = rawDistractions.map((row) => ({
+      id: row.id as string,
+      text: row.text as string,
+      projectId: (row.project_id as string) || undefined,
+      resolved: Boolean(row.resolved),
+      createdAt: row.created_at as string,
+    }));
+
+    // Update local data/app_data.json as well
+    const payload = { projects, distractions, updatedAt: new Date().toISOString() };
+    fs.writeFileSync(DATA_FILE, JSON.stringify(payload, null, 2), 'utf-8');
+
+    return res.json({ success: true, projects, distractions, updatedAt: payload.updatedAt });
+  } catch (err) {
+    return res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// POST /api/d1/query & /api/d1-query - Execute custom query on Cloudflare D1
+const handleD1Query = async (req: express.Request, res: express.Response) => {
+  try {
+    const accountId = req.body.accountId || process.env.CLOUDFLARE_D1_ACCOUNT_ID;
+    const databaseId = req.body.databaseId || process.env.CLOUDFLARE_D1_DATABASE_ID;
+    const apiToken = req.body.apiToken || process.env.CLOUDFLARE_D1_API_TOKEN;
+    const { sql, params } = req.body;
+
+    if (!sql) {
+      return res.status(400).json({ error: 'SQL query string is required.' });
+    }
+
+    if (!accountId || !databaseId || !apiToken) {
+      return res.status(400).json({
+        error: 'Cloudflare credentials required in Node server environment. When running in Cloudflare Pages live .dev, binding env.DB is used directly.',
+      });
+    }
+
+    const result = await queryCloudflareD1(accountId, databaseId, apiToken, sql, params || []);
+    return res.json({ success: true, result });
+  } catch (err) {
+    return res.status(400).json({ error: (err as Error).message });
+  }
+};
+
+app.post('/api/d1/query', handleD1Query);
+app.post('/api/d1-query', handleD1Query);
+
+// GET /api/d1-status - Status of Cloudflare D1 integration
+app.get('/api/d1-status', async (req, res) => {
+  try {
+    const accountId = process.env.CLOUDFLARE_D1_ACCOUNT_ID;
+    const databaseId = process.env.CLOUDFLARE_D1_DATABASE_ID;
+    const apiToken = process.env.CLOUDFLARE_D1_API_TOKEN;
+
+    if (accountId && databaseId && apiToken) {
+      try {
+        await queryCloudflareD1(accountId, databaseId, apiToken, 'SELECT 1 as connected;');
+        return res.json({
+          connected: true,
+          isLiveBinding: false,
+          provider: 'cloudflare_d1_api',
+          environment: 'node_server_env',
+          message: 'Cloudflare D1 connected via environment credentials.',
+        });
+      } catch (err) {
+        return res.json({
+          connected: false,
+          isLiveBinding: false,
+          provider: 'cloudflare_d1_api',
+          error: (err as Error).message,
+        });
+      }
+    }
+
+    return res.json({
+      connected: false,
+      isLiveBinding: false,
+      provider: 'server_file',
+      binding: 'DB',
+      environment: 'node_server',
+      message: 'Running in local dev server with data/app_data.json fallback. When deployed to Cloudflare Pages live .dev, binding env.DB is active automatically.',
+    });
+  } catch (err) {
+    return res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// POST /api/d1-init - Execute schema.sql
+app.post('/api/d1-init', async (req, res) => {
+  try {
+    const accountId = req.body.accountId || process.env.CLOUDFLARE_D1_ACCOUNT_ID;
+    const databaseId = req.body.databaseId || process.env.CLOUDFLARE_D1_DATABASE_ID;
+    const apiToken = req.body.apiToken || process.env.CLOUDFLARE_D1_API_TOKEN;
+
+    if (!accountId || !databaseId || !apiToken) {
+      return res.status(400).json({
+        error: 'Cloudflare credentials required to initialize schema remotely from Node server. In Cloudflare Pages live .dev, env.DB executes schema directly.',
+      });
+    }
+
+    const schemaPath = path.join(__dirname, 'schema.sql');
+    if (!fs.existsSync(schemaPath)) {
+      return res.status(404).json({ error: 'schema.sql not found on server.' });
+    }
+
+    const schemaSql = fs.readFileSync(schemaPath, 'utf-8');
+    const statements = schemaSql
+      .split(';')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0 && !s.startsWith('--'));
+
+    for (const sql of statements) {
+      await queryCloudflareD1(accountId, databaseId, apiToken, sql);
+    }
+
+    return res.json({ success: true, message: 'Cloudflare D1 schema initialized successfully!' });
+  } catch (err) {
     return res.status(500).json({ error: (err as Error).message });
   }
 });
