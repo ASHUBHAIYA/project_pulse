@@ -2,17 +2,11 @@ name = "project-pulse"
 compatibility_date = "2024-04-01"
 pages_build_output_dir = "dist"
 
-# ========================================================  
+# ========================================================
 # Cloudflare D1 Database Binding
-# In Cloudflare Pages Dashboard: Settings -> Functions -> D1 Database Bindings
-# Variable name: DB
 # ========================================================
 [[d1_databases]]
 binding = "DB"
 database_name = "projectpulse-db"
-database_id = "41ee0122-5980-44b7-881e-4b532999852b" # Replace with your D1 database ID from 'wrangler d1 create projectpulse-db'
+database_id = "41ee0122-5980-44b7-881e-4b532999852b"
 migrations_dir = "migrations"
-
-[vars]
-CLOUDFLARE_ACCOUNT_ID = "9457ddb8973cf9860d5fb68f8151f9f2"
-CLOUDFLARE_API_TOKEN = "cfut_WKIizeuxqZje5SzNRabgZimzHT6aAKeDK4rsFRX732a6ee52"
