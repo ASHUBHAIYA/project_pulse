@@ -1,36 +1,11 @@
-/**
- * Cloudflare Pages Function: /api/d1-query
- * Executes SQL statements directly on Cloudflare D1 binding 'env.DB'.
- */
-
 interface Env {
-  DB?: {
-    prepare: (query: string) => {
-      bind: (...args: unknown[]) => {
-        all: () => Promise<{ results: Record<string, unknown>[] }>;
-        run: () => Promise<{ success: boolean; meta?: unknown }>;
-      };
-      all: () => Promise<{ results: Record<string, unknown>[] }>;
-      run: () => Promise<{ success: boolean; meta?: unknown }>;
-    };
-    exec: (query: string) => Promise<{ count: number }>;
-  };
-}
-
-interface EventContext<E, P, D> {
-  request: Request;
-  functionPath: string;
-  waitUntil: (promise: Promise<unknown>) => void;
-  next: (input?: Request | string, init?: RequestInit) => Promise<Response>;
-  env: E;
-  params: P;
-  data: D;
+  DB: D1Database;
 }
 
 const CORS_HEADERS = {
   'Content-Type': 'application/json',
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
 
@@ -38,62 +13,63 @@ export async function onRequestOptions(): Promise<Response> {
   return new Response(null, { headers: CORS_HEADERS });
 }
 
-export async function onRequestPost(context: EventContext<Env, Record<string, string>, unknown>): Promise<Response> {
+export async function onRequestPost(context: { request: Request; env: Env }): Promise<Response> {
   const { request, env } = context;
 
   if (!env.DB) {
     return new Response(
-      JSON.stringify({
-        error: 'Cloudflare D1 binding DB is not bound in this environment.',
-      }),
+      JSON.stringify({ error: 'Cloudflare D1 binding DB is not bound.' }),
       { status: 503, headers: CORS_HEADERS }
     );
   }
 
   try {
-    const { sql, params } = (await request.json()) as { sql?: string; params?: unknown[] };
+    const body: any = await request.json();
+    const rawSql = body.sql || body.query;
 
-    if (!sql || typeof sql !== 'string') {
-      return new Response(JSON.stringify({ error: 'SQL query string is required' }), {
+    if (!rawSql) {
+      return new Response(JSON.stringify({ error: 'Missing SQL query' }), {
         status: 400,
         headers: CORS_HEADERS,
       });
     }
 
-    const trimmed = sql.trim();
-    const isSelect = trimmed.toUpperCase().startsWith('SELECT') || trimmed.toUpperCase().startsWith('PRAGMA');
+    // Strip SQL comments and empty lines
+    const cleanSql = rawSql
+      .replace(/--.*$/gm, '')
+      .replace(/\/\*[\s\S]*?\*\//g, '');
 
-    const stmt = env.DB.prepare(trimmed);
-    const bound = params && params.length > 0 ? stmt.bind(...params) : stmt;
+    // Split statements safely
+    const statements = cleanSql
+      .split(';')
+      .map((s: string) => s.trim())
+      .filter((s: string) => s.length > 0);
 
-    if (isSelect) {
-      const result = await bound.all();
-      return new Response(
-        JSON.stringify({
-          success: true,
-          result: {
-            results: result.results || [],
-          },
-        }),
-        { headers: CORS_HEADERS }
-      );
-    } else {
-      const result = await bound.run();
-      return new Response(
-        JSON.stringify({
-          success: true,
-          result: {
-            results: [],
-            meta: result.meta,
-          },
-        }),
-        { headers: CORS_HEADERS }
-      );
+    if (statements.length === 0) {
+      return new Response(JSON.stringify({ success: true, results: [] }), {
+        headers: CORS_HEADERS,
+      });
     }
-  } catch (err) {
+
+    if (statements.length === 1) {
+      const res = await env.DB.prepare(statements[0]).all();
+      return new Response(JSON.stringify({ success: true, ...res }), {
+        headers: CORS_HEADERS,
+      });
+    }
+
+    // Execute multiple statements in batch
+    const batchRes = await env.DB.batch(
+      statements.map((stmt: string) => env.DB.prepare(stmt))
+    );
+
+    return new Response(JSON.stringify({ success: true, batchResults: batchRes }), {
+      headers: CORS_HEADERS,
+    });
+  } catch (err: any) {
     return new Response(
-      JSON.stringify({ error: (err as Error).message }),
-      { status: 400, headers: CORS_HEADERS }
+      JSON.stringify({ error: err.message || 'Query execution failed' }),
+      { status: 500, headers: CORS_HEADERS }
     );
   }
 }
