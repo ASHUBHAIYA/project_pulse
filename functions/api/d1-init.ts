@@ -5,6 +5,11 @@
 
 interface Env {
   DB?: {
+    prepare: (query: string) => {
+      bind: (...args: any[]) => any;
+      run: () => Promise<any>;
+    };
+    batch: (statements: any[]) => Promise<any[]>;
     exec: (query: string) => Promise<{ count: number }>;
   };
 }
@@ -43,44 +48,17 @@ export async function onRequestPost(context: EventContext<Env, Record<string, st
   }
 
   try {
-    await env.DB.exec(`
-      CREATE TABLE IF NOT EXISTS projects (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        platform TEXT NOT NULL,
-        description TEXT,
-        repository_url TEXT,
-        active_step_id TEXT,
-        steps_json TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS distractions (
-        id TEXT PRIMARY KEY,
-        text TEXT NOT NULL,
-        project_id TEXT,
-        resolved INTEGER NOT NULL DEFAULT 0,
-        created_at TEXT NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS focus_sessions (
-        id TEXT PRIMARY KEY,
-        active_project_id TEXT,
-        active_step_id TEXT,
-        timer_seconds_left INTEGER NOT NULL DEFAULT 1500,
-        target_minutes INTEGER NOT NULL DEFAULT 25,
-        total_focus_minutes INTEGER NOT NULL DEFAULT 0,
-        sound_enabled INTEGER NOT NULL DEFAULT 1,
-        updated_at TEXT NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS app_meta (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS idx_projects_platform ON projects(platform);
-      CREATE INDEX IF NOT EXISTS idx_projects_updated_at ON projects(updated_at);
-      CREATE INDEX IF NOT EXISTS idx_distractions_resolved ON distractions(resolved);
-    `);
+    const statements = [
+      `CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, platform TEXT NOT NULL, description TEXT, repository_url TEXT, active_step_id TEXT, steps_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);`,
+      `CREATE TABLE IF NOT EXISTS distractions (id TEXT PRIMARY KEY, text TEXT NOT NULL, project_id TEXT, resolved INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL);`,
+      `CREATE TABLE IF NOT EXISTS focus_sessions (id TEXT PRIMARY KEY, active_project_id TEXT, active_step_id TEXT, timer_seconds_left INTEGER NOT NULL DEFAULT 1500, target_minutes INTEGER NOT NULL DEFAULT 25, total_focus_minutes INTEGER NOT NULL DEFAULT 0, sound_enabled INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL);`,
+      `CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL);`,
+      `CREATE INDEX IF NOT EXISTS idx_projects_platform ON projects(platform);`,
+      `CREATE INDEX IF NOT EXISTS idx_projects_updated_at ON projects(updated_at);`,
+      `CREATE INDEX IF NOT EXISTS idx_distractions_resolved ON distractions(resolved);`,
+    ];
+
+    await env.DB.batch(statements.map((sql) => env.DB!.prepare(sql)));
 
     return new Response(
       JSON.stringify({
