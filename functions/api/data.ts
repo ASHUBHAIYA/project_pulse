@@ -38,41 +38,13 @@ const CORS_HEADERS = {
 };
 
 async function ensureSchema(db: NonNullable<Env['DB']>) {
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS projects (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      platform TEXT NOT NULL,
-      description TEXT,
-      repository_url TEXT,
-      active_step_id TEXT,
-      steps_json TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS distractions (
-      id TEXT PRIMARY KEY,
-      text TEXT NOT NULL,
-      project_id TEXT,
-      resolved INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS focus_sessions (
-      id TEXT PRIMARY KEY,
-      active_project_id TEXT,
-      active_step_id TEXT,
-      timer_seconds_left INTEGER NOT NULL DEFAULT 1500,
-      target_minutes INTEGER NOT NULL DEFAULT 25,
-      total_focus_minutes INTEGER NOT NULL DEFAULT 0,
-      sound_enabled INTEGER NOT NULL DEFAULT 1,
-      updated_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS app_meta (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-  `);
+  const statements = [
+    `CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, platform TEXT NOT NULL, description TEXT, repository_url TEXT, active_step_id TEXT, steps_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);`,
+    `CREATE TABLE IF NOT EXISTS distractions (id TEXT PRIMARY KEY, text TEXT NOT NULL, project_id TEXT, resolved INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL);`,
+    `CREATE TABLE IF NOT EXISTS focus_sessions (id TEXT PRIMARY KEY, active_project_id TEXT, active_step_id TEXT, timer_seconds_left INTEGER NOT NULL DEFAULT 1500, target_minutes INTEGER NOT NULL DEFAULT 25, total_focus_minutes INTEGER NOT NULL DEFAULT 0, sound_enabled INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL);`,
+    `CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL);`,
+  ];
+  await db.batch(statements.map((sql) => db.prepare(sql)));
 }
 
 export async function onRequestOptions(): Promise<Response> {
@@ -82,24 +54,21 @@ export async function onRequestOptions(): Promise<Response> {
 export async function onRequestGet(context: EventContext<Env, Record<string, string>, unknown>): Promise<Response> {
   const { env } = context;
 
-  // Check if Cloudflare D1 binding is available
   if (!env.DB) {
     return new Response(
       JSON.stringify({
         exists: false,
         isLiveBinding: false,
         error: 'Cloudflare D1 binding DB is not bound in this environment.',
-        hint: 'Please bind your D1 database to variable DB in Cloudflare Pages settings (Settings -> Functions -> D1 Database Bindings).',
+        hint: 'Please bind your D1 database to variable DB in Cloudflare Pages settings.',
       }),
       { status: 503, headers: CORS_HEADERS }
     );
   }
 
   try {
-    // 1. Ensure tables exist
     await ensureSchema(env.DB);
 
-    // 2. Fetch projects and distractions
     const projectsQuery = await env.DB.prepare('SELECT * FROM projects ORDER BY updated_at DESC').all();
     const distractionsQuery = await env.DB.prepare('SELECT * FROM distractions ORDER BY created_at DESC').all();
     const focusQuery = await env.DB.prepare('SELECT * FROM focus_sessions LIMIT 1').all();
@@ -205,7 +174,7 @@ export async function onRequestPost(context: EventContext<Env, Record<string, st
     const distractions = body.distractions || [];
     const focusSession = body.focusSession;
 
-    // Ensure schema
+    // Ensure schema with clean single-line batch statements
     await ensureSchema(env.DB);
 
     const stmts: unknown[] = [];
@@ -259,7 +228,9 @@ export async function onRequestPost(context: EventContext<Env, Record<string, st
       );
     }
 
-    await env.DB.batch(stmts);
+    if (stmts.length > 0) {
+      await env.DB.batch(stmts);
+    }
 
     return new Response(
       JSON.stringify({
@@ -272,10 +243,4 @@ export async function onRequestPost(context: EventContext<Env, Record<string, st
       }),
       { headers: CORS_HEADERS }
     );
-  } catch (err) {
-    return new Response(
-      JSON.stringify({ error: `Cloudflare D1 save failed: ${(err as Error).message}` }),
-      { status: 500, headers: CORS_HEADERS }
-    );
   }
-}
